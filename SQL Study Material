@@ -2,3 +2,7 @@ Case in sql:(case when (select isnull(sum(AmountCollected),cast (0 as int)) from
 						BookingId = @BookingId and MembershipPaymentTypeId = 4 and DeletedAt is null) = b.NetTotal 
 				then cast (1 as bit)
 				else cast (0 as bit)end) as IsPaymentCompleted
+
+Notes: How to find before two days changes in sp
+ 
+=> Select name from sys.procedures Where modify_date >= '2023-03-29 00:00:00.000' order by name ASC
