@@ -1,0 +1,4 @@
+Case in sql:(case when (select isnull(sum(AmountCollected),cast (0 as int)) from PaymentProofMapping where 
+						BookingId = @BookingId and MembershipPaymentTypeId = 4 and DeletedAt is null) = b.NetTotal 
+				then cast (1 as bit)
+				else cast (0 as bit)end) as IsPaymentCompleted
