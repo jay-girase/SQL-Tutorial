@@ -6,3 +6,106 @@ Case in sql:(case when (select isnull(sum(AmountCollected),cast (0 as int)) from
 Notes: How to find before two days changes in sp
  
 => Select name from sys.procedures Where modify_date >= '2023-03-29 00:00:00.000' order by name ASC
+
+************SP********************
+about in SP:In  this SP so many things for learning like casting, case,how to declare variable in sql ,how to use variable in sql,how to get error message,If Else condition in sql
+
+**************** Start SP *************************
+USE [SFC]
+GO
+/****** Object:  StoredProcedure [dbo].[GetPaymentReconcilationDetailsByAdmin]    Script Date: 11-12-2023 12:30:22 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+-- GetPaymentReconcilationDetailsByAdmin 80282
+ALTER PROCEDURE [dbo].[GetPaymentReconcilationDetailsByAdmin]      
+@PaymentProofId BIGINT      
+      
+AS      
+BEGIN      
+BEGIN TRY      
+DECLARE @totalAmountCollected  Decimal(10,2),      
+@MembershipPaymentId BIGINT,      
+@tempCompanyName nvarchar(200),    
+@instituteName nvarchar(200),   
+@otherInstituteName nvarchar(200),  
+@tempReceient nvarchar(200),      
+@tempbusinessEmail nvarchar(200)      
+      
+           
+  declare @tempCorpMemberId bigint = (SELECT ISNULL(CorporateMemberId,0) FROM PaymentProofMapping where PaymentProofId=@PaymentProofId)      
+  declare @tempIndividualMemberId bigint = (SELECT ISNULL(IndividualMemberId,0) FROM PaymentProofMapping where PaymentProofId=@PaymentProofId)      
+  declare @tempMembershipPaymentTypeId bigint = (SELECT ISNULL(MembershipPaymentTypeId,0) FROM PaymentProofMapping where PaymentProofId = @PaymentProofId and DeletedAt is null)      
+ 
+  if(@tempCorpMemberId != 0 AND @tempIndividualMemberId = 0)      
+  begin      
+   set @totalAmountCollected = (select Sum(AmountCollected) from PaymentProofMapping where CorporateMemberId = @tempCorpMemberId And MembershipPaymentTypeId = @tempMembershipPaymentTypeId)      
+   set @tempCompanyName = (select CompanyName from CorporateMembers where CorporateMemberId = @tempCorpMemberId)      
+   set @tempReceient = (select isnull(FirstName,'') +' '+ isnull(LastName,'') from CorporateMembers where CorporateMemberId = @tempCorpMemberId)      
+   set @tempbusinessEmail = (select businessEmail from CorporateMembers where CorporateMemberId = @tempCorpMemberId)        
+  end      
+  ELSE      
+  begin      
+   set @totalAmountCollected = (select Sum(AmountCollected) from PaymentProofMapping where IndividualMemberId = @tempIndividualMemberId And MembershipPaymentTypeId not in (4))      
+   set @tempCompanyName = (select CompanyName from IndividualMember where IndividualMemberId = @tempIndividualMemberId)  
+   set @instituteName = (select InstituteName from IndividualInstituteInformation where IndividualMemberId = @tempIndividualMemberId)    
+   set @otherInstituteName = (select isnull (OtherInstituteName,'') from IndividualInstituteInformation where IndividualMemberId = @tempIndividualMemberId)      
+   set @tempReceient = (select isnull(FirstName,'') +' '+ isnull(LastName,'') from IndividualMember where IndividualMemberId = @tempIndividualMemberId)      
+   set @tempbusinessEmail = (select Email from IndividualMember where IndividualMemberId = @tempIndividualMemberId)      
+      
+         
+  end      
+    
+      
+  BEGIN          
+ Select
+ ( case when PPM.FinanceCreditNoteId is not null then (Select CreditNoteTotalRefund from FinanceCreditNote Where FinanceCreditNoteId = PPM.FinanceCreditNoteId)    
+     when PSM.TotalAmount is not null then PSM.TotalAmount     
+     when b.TotalPrice is not null then b.TotalPrice    
+     when fad.AdhokTotalAmount is not null then fad.AdhokTotalAmount    
+    end    
+   ) as TotalAmount,      
+-- isnull(PSM.TotalAmount,0) as TotalAmount,  
+ (Case when @totalAmountCollected is not null then @totalAmountCollected 
+       else (select Sum(AmountCollected) from PaymentProofMapping where BookingId = b.BookingId And MembershipPaymentTypeId = 4)  end)  as AmountCollected,  
+(( case when PPM.FinanceCreditNoteId is not null then (Select CreditNoteTotalRefund from FinanceCreditNote Where FinanceCreditNoteId = PPM.FinanceCreditNoteId)    
+     when PSM.TotalAmount is not null then PSM.TotalAmount     
+     when b.TotalPrice is not null then b.TotalPrice    
+     when fad.AdhokTotalAmount is not null then fad.AdhokTotalAmount    
+    end    
+   ) - 
+   (Case when @totalAmountCollected is not null then @totalAmountCollected 
+       else (select Sum(AmountCollected) from PaymentProofMapping where BookingId = b.BookingId And MembershipPaymentTypeId = 4)  end)) as ShortfallAmount,  
+@tempCompanyName AS CompanyName,  
+@tempReceient AS Receient,  
+@tempbusinessEmail As businessEmail,  
+@tempIndividualMemberId AS IndividualMemberId,  
+@tempCorpMemberId AS CorporateMemberId,  
+@tempMembershipPaymentTypeId as MembershipPaymentTypeId,    
+@instituteName as InstituteName,  
+@otherInstituteName as OtherInstituteName,
+PPM.BookingId  
+    From PaymentProofMapping PPM        
+   left join MembershipPayment as PSM on PSM.MembershipPaymentId=PPM.BookingId  AND PPM.MembershipPaymentTypeId IN (1, 2, 3) 
+   LEFT JOIN FinanceAdhokInvoiceGeneralDetail fad ON fad.FinanceAdhocInvoiceId = PPM.FinanceAdhocInvoiceId AND PPM.MembershipPaymentTypeId = 5 
+   LEFT JOIN Booking b ON b.BookingId = PPM.BookingId AND PPM.MembershipPaymentTypeId IN (4)
+   --LEFT join IndividualInstituteInformation as III on III.IndividualInstituteInformationId =PPM.BookingId  
+   where  PPM.PaymentProofId = @PaymentProofId AND PPM.DeletedAt is null      
+         
+   SELECT @PaymentProofId as KeyId,         
+     Cast(0 as bit) AS HasError,      
+    '' as ErrorType,      
+    '' as ErrorMessage,      
+    '' as ErrorColumn             
+ END       
+END TRY                  
+BEGIN CATCH                
+ DECLARE @ErrorMessage nvarchar(max) = ERROR_MESSAGE()                
+ DECLARE @ErrorSeverity nvarchar(max) = ERROR_SEVERITY()              
+ DECLARE @ErrorState nvarchar(max) = ERROR_STATE()                
+    RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState)                
+END CATCH         
+END  
+*****************************End SP **************************
