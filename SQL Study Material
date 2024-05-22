@@ -109,3 +109,16 @@ BEGIN CATCH
 END CATCH         
 END  
 *****************************End SP **************************
+
+**************************** LINQ JOINS ********************************
+
+ var classBooking = (from info in dataContext.ACCABookingAttendeeInformation
+                                                   join bookinginfo in dataContext.ACCABooking on info.ACCABookingId equals bookinginfo.ACCABookingId
+                                                    where info.Email == tempEmail && (bookinginfo.ACCABookingStatusId == 2 || bookinginfo.ACCABookingStatusId == 5 || bookinginfo.ACCABookingStatusId == 7)
+                                                    && (bookinginfo.PromoCode.Contains("ACCABUDGET2020") /*== "ACCA50CPD" || bookinginfo.PromoCode == "ACCABUDGET2020"*/) && bookinginfo.IsPromocodeUsed == true
+                                                    select new BookingDTO
+                                                    {
+                                                        ACCABookingId = bookinginfo.ACCABookingId,
+                                                    }).Count();
+                                totalVoucherCount = totalVoucherCount + classBooking;
+*************************** END LINQ JOINS ****************************
