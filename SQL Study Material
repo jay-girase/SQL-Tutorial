@@ -122,3 +122,72 @@ END
                                                     }).Count();
                                 totalVoucherCount = totalVoucherCount + classBooking;
 *************************** END LINQ JOINS ****************************
+
+
+*************************** In this SP learning realted things like temp table, gropu by,date oprations ****************************
+
+
+-- =============================================  
+-- Author:  <Author,,Name>  
+-- Create date: <Create Date,,>  
+-- Description: <Description,,>  
+-- =============================================  
+ALTER PROCEDURE [dbo].[InactiveBatchJob]  
+ -- Add the parameters for the stored procedure here  
+   
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+ BEGIN TRY  
+  
+
+     declare @ApMaintaningCertificationFee  int,    
+       @AApMaintaningCertificationFee  decimal(10,2),    
+       @AssociateMaintaningCertificationFee  decimal(10,2),  
+       @GMAPApplicationTypeId int
+        
+            SET @ApMaintaningCertificationFee =  Isnull((select cast(ApMaintaningCertificationFee AS INT ) from MembershipPricing),0)    
+            SET @AApMaintaningCertificationFee =  Isnull((select AApMaintaningCertificationFee from MembershipPricing),0)    
+            SET @AssociateMaintaningCertificationFee =  Isnull((select AssociateMaintaningCertificationFee from MembershipPricing),0)    
+        
+          BEGIN 
+	Declare @tempdata table
+	   (
+	    Id  int,
+		points int
+	   )
+     Insert into @tempdata 
+	   select GMAPMemberId,  SUM(CPDPointsAwardedId) as SumOfCPDPoints  from CPDSubmission
+       group by GMAPMemberId
+  
+     SELECT cs.GMAPMemberId, 
+	          GA.ApplicationName,  
+              YEAR(GETDATE()) as Years,  
+              SUM(CPDPointsAwardedId) AS CPDPointsAwardedIdPoints,  
+              GM.PrimaryEmail,  
+              DATEADD(dd, 0, DATEDIFF(dd, 0, GETDATE())) as CurrentDate,  
+              (year(getdate()) + 1) as YearPlusOne  
+              --CPDStatusId  
+              FROM CPDSubmission CS    
+              inner join GMAPMembers GM on  GM.GMAPMemberId = CS.GMAPMemberId 
+	          inner join GMAPApplicationType GA on  GM.GMAPApplicationTypeId = GA.GMAPApplicationTypeId
+			  inner join @tempdata t  On  CS.GMAPMemberId  = t.Id 
+			  where (t.points > @ApMaintaningCertificationFee OR 
+			  t.points > @AApMaintaningCertificationFee 
+			  OR t.points > @AssociateMaintaningCertificationFee) 
+			  And t.points is not null  AND CPDPointsAwardedId is not null
+              GROUP BY CPDPoints,cs.GMAPMemberId,ApplicationName,PrimaryEmail 
+  
+ END  
+  END TRY  
+    BEGIN CATCH  
+        DECLARE @ErrorSeverity INT = ERROR_SEVERITY()  
+        DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE()  
+        DECLARE @ErrorState INT = ERROR_STATE()  
+        RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState)  
+    END CATCH  
+END  
+
+=============================================  =============================================  
