@@ -191,3 +191,395 @@ BEGIN
 END  
 
 =============================================  =============================================  
+
+
+
+============================================= Pagination and Grid, searching SP =============================================  
+
+USE [AISP]
+GO
+/****** Object:  StoredProcedure [dbo].[GetIndividualMemberList ]    Script Date: 21-06-2024 11:04:23 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+--[dbo].[GetIndividualMemberList] '',0,1,10,'Raj Mishra','','',100
+ALTER PROCEDURE [dbo].[GetIndividualMemberList ]              
+ @OrderByColumn nvarchar(100) = '',                      
+ @OrderFlag int = 0,                      
+ @PageNo int = 1,                      
+ @PageSize int= 10,             
+ @SearchText  nvarchar(50) = null, -- Search by Name             
+ @StatusId int = 0,      
+ @EndDate nvarchar(50) = null,
+ @TotalCount int OUTPUT                     
+AS                        
+BEGIN                        
+SET NOCOUNT ON;                        
+BEGIN TRY                
+DECLARE @tempData table                    
+  (                    
+ [Row] bigint,                    
+ [PKid] bigint                  
+  )             
+     DECLARE @StartIndex INT = ((@PageNo - 1) * @PageSize) + 1;
+	DECLARE @EndIndex INT = @PageNo * @PageSize;        
+  --declare @isSuspended bit = 0     
+ -- if exists(select * from Status where StatusName='Suspended' and StatusId= @StatusId)    
+ -- begin    
+ --set @isSuspended = 1;    
+ -- end     
+    
+  INSERT INTO @tempData            
+ SELECT             
+  ROW_NUMBER() over (                  
+  ORDER BY                    
+    (CASE WHEN @OrderByColumn = '' AND @OrderFlag = 1 THEN IM.[IndividualMemberId]  END) DESC,                  
+                (CASE WHEN @OrderByColumn = '' AND @OrderFlag = 0 THEN IM.[IndividualMemberId] END) ASC,    
+                (CASE WHEN @OrderByColumn LIKE '%contactPerson%' AND @OrderFlag = 1 THEN IM.FirstName END) DESC,                  
+                (CASE WHEN @OrderByColumn LIKE '%contactPerson%' AND @OrderFlag = 0 THEN IM.FirstName END) ASC,        
+                (CASE WHEN @OrderByColumn LIKE '%status%' AND @OrderFlag = 1 THEN IM.StatusId END) DESC,                  
+                (CASE WHEN @OrderByColumn LIKE '%status%' AND @OrderFlag = 0 THEN IM.StatusId END) ASC
+				--(CASE WHEN @OrderByColumn LIKE '%Date%' AND @OrderFlag = 1 THEN IM.StartDate END) DESC,                  
+    --            (CASE WHEN @OrderByColumn LIKE '%Date%' AND @OrderFlag = 0 THEN IM.StartDate END) ASC        
+  ) as Row,            
+  IM.[IndividualMemberId]            
+  FROM [dbo].[IndividualMembers] IM            
+  LEFT JOIN IndividualSIISAccountInformation ISA ON ISA.IndividualMemberId = IM.IndividualMemberId            
+  LEFT JOIN Status s ON s.StatusId = IM.StatusId           
+  --LEFT JOIN MembershipType MT ON MT.MembershipTypeId = IM.MembershipTypeId         
+  WHERE IM.[DeletedAt] IS NULL AND ISA.DeletedAt IS NULL         
+  AND ( Replace(IM.FirstName,' ','')+' ' + Replace(IM.LastName,' ','') LIKE '%' + @SearchText + '%' OR @SearchText IS NULL OR @SearchText = '')            
+  --AND (IM.BusinessEmail LIKE '%' + @SearchByEmailAddress +'%' OR @SearchByEmailAddress IS NULL)            
+ AND (@StatusId IS NULL OR @StatusId = 0 OR IM.StatusId = @StatusId)  
+ AND IM.StatusId NOT IN (2, 15)
+ -- AND (@MembershipTypeId  IS NULL OR @MembershipTypeId = 0 OR IM.MembershipTypeId = @MembershipTypeId)    
+ --  or  (@isSuspended = 1 and IM.IndividualMemberId in (select IndividualMemberId from MembershipSuspension where DeletedAt is null))    
+            
+            
+ --SELECT @totalCount=count(*) from @tempData             
+ SELECT IM.IndividualMemberId,            
+    IM.FirstName+' ' + IM.LastName AS Name,                 
+    IM.BusinessEmail,            
+    IM.StatusId,      
+	IM.ContactNo,
+    
+ MT.MembershipTypeName  as   MembershipTypeId,   
+ ISA.SIISIndividualId,
+ IMS.SubscriptionEndDate,
+ ISNULL(MT.MembershipTypeName, 'No Membership Type') AS MembershipType,        
+   -- ISNULL(s.StatusName, 'Inactive') AS StatusName,     
+ (case when  isnull((select COUNT(*) from MembershipSuspension where CorporateMembersId = im.CorporateMembersId  and DeletedAt is null and IM.CorporateMembersId is not null and IM.CorporateMembersId > 0),0) > 0     
+ then (select StatusName from  Status where StatusName = 'Suspended')     
+ when  isnull((select COUNT(*) from MembershipSuspension where IndividualMemberId = im.IndividualMemberId  and DeletedAt is null),0) > 0     
+ then (select StatusName from  Status where StatusName = 'Suspended')    
+ else ISNULL(s.StatusName, 'Inactive') end) as StatusName        
+ --IMS.SubscriptionEndDate        
+   --(case when im.IndividualMemberId > 0   then (select top 1 SubscriptionEndDate  from IndividualMemberSubscription where IndividualMemberId=im.IndividualMemberId )        
+   --when im.IndividualMemberId is null then IMS.SubscriptionEndDate else  null end ) as SubscriptionEndDate       
+    
+      
+  FROM @tempData td            
+    LEFT JOIN IndividualMembers IM ON IM.IndividualMemberId = td.PKid            
+    LEFT JOIN IndividualSIISAccountInformation ISA ON ISA.IndividualMemberId = IM.IndividualMemberId     
+    LEFT JOIN Status s ON s.StatusId = IM.StatusId            
+    LEFT JOIN MembershipType MT ON MT.MembershipTypeId = IM.MembershipTypeId -- Include Membership Type information        
+ LEFT JOIN IndividualMemberSubscription IMS ON IMS.IndividualMemberId = IM.IndividualMemberId        
+  WHERE row BETWEEN @StartIndex AND @EndIndex AND IM.[DeletedAt] IS NULL AND ISA.DeletedAt IS NULL             
+    AND (Replace(IM.FirstName,' ','')+' ' + Replace(IM.LastName,' ','') LIKE '%' + @SearchText + '%' OR @SearchText IS NULL OR @SearchText = '')           
+  --AND (@SearchByEmailAddress IS NULL OR @SearchByEmailAddress = '' OR IM.BusinessEmail LIKE '%' + @SearchByEmailAddress +'%')            
+  AND (@StatusId IS NULL OR @StatusId = 0 OR IM.StatusId = @StatusId)       
+  AND IM.StatusId NOT IN (2, 15)
+-- AND (@MembershipTypeId  IS NULL OR @MembershipTypeId = 0 OR IM.MembershipTypeId = @MembershipTypeId)     
+ --or  (@isSuspended = 1 and IM.IndividualMemberId in (select IndividualMemberId from MembershipSuspension where DeletedAt is null))    
+  --ORDER BY                    
+  --   (CASE when @orderByColumn like '%statusName%' and @orderFlag = 0 then s.StatusName end)asc,            
+  --   (CASE when @orderByColumn like '%statusName%' and @orderFlag = 1 then s.StatusName end)desc,            
+  --   (CASE when @orderByColumn like '%name%' and @orderFlag = 0 then IM.FirstName end)asc,            
+  --   (CASE when @orderByColumn like '%name%' and @orderFlag = 1 then IM.FirstName end)desc               
+              
+  SELECT             
+    @totalCount = COUNT(*)         
+  FROM @tempData            
+            
+END TRY                        
+BEGIN CATCH                        
+ DECLARE @ErrorSeverity nvarchar(max) = ERROR_SEVERITY()                        
+ DECLARE @ErrorMessage nvarchar(max) = ERROR_MESSAGE()                        
+ DECLARE @ErrorState nvarchar(max) = ERROR_STATE()                        
+    RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState)                        
+END CATCH                        
+END   
+
+=============================================  =============================================  
+
+=============================================  Dropdown SP =============================================  
+
+USE [AISP]
+GO
+/****** Object:  StoredProcedure [dbo].[GetAllDropdownsForAcademicMembers]    Script Date: 21-06-2024 13:26:42 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+ALTER PROCEDURE [dbo].[GetAllDropdownsForAcademicMembers]           
+AS                  
+BEGIN                  
+    SET NOCOUNT ON;                  
+    BEGIN TRY                  
+                  
+        DECLARE @dropdowns table(                  
+            [Id] INT,                            
+            [Name] NVARCHAR(100),                  
+            [ValueOrdering] INT,                  
+            [DropdownName] NVARCHAR(50),
+            [AdditionalInfo] NVARCHAR(100) 
+        );    
+        
+        INSERT INTO @dropdowns                
+        SELECT                 
+            CAST([MembershipTypeId] AS INT) AS Id,                
+            [MembershipTypeName] AS Name,                
+            ValueOrdering,                
+            'AcademicMembershipType' AS DropdownName,
+            NULL AS AdditionalInfo 
+        FROM [MembershipType]                
+        WHERE DeletedAt IS NULL 
+          AND MembershipName='AcademicMember';           
+   
+        INSERT INTO @dropdowns              
+        SELECT               
+            CAST([MembershipTenureId] AS INT) AS Id,              
+            [MembershipTenureName] AS Name,              
+            ValueOrdering,              
+            'MembershipTenure' AS DropdownName,
+            NULL AS AdditionalInfo 
+        FROM [MembershipTenure]              
+        WHERE DeletedAt IS NULL 
+          AND MembershipTenureId IN (1,2)
+        ORDER BY ValueOrdering;        
+        
+        INSERT INTO @dropdowns              
+        SELECT               
+            CAST([DesignationId] AS INT) AS Id,              
+            [DesignationName] AS Name,              
+            ValueOrdering,              
+            'Designation' AS DropdownName,
+            NULL AS AdditionalInfo 
+        FROM [Designation]              
+        WHERE DeletedAt IS NULL 
+        ORDER BY ValueOrdering;   
+  
+        INSERT INTO @dropdowns  
+        SELECT                 
+            CAST([StatusId] AS INT) AS Id,                
+            [StatusName] AS Name,  
+            ValueOrdering,  
+            'Status' AS DropdownName,
+            NULL AS AdditionalInfo 
+        FROM [Status]               
+        WHERE DeletedAt IS NULL; 
+		
+		  INSERT INTO @dropdowns  
+        SELECT                 
+            CAST([StatusId] AS INT) AS Id,                
+            [StatusName] AS Name,  
+            ValueOrdering,  
+            'TaskListStatus' AS DropdownName,
+            NULL AS AdditionalInfo 
+        FROM [Status]               
+        WHERE DeletedAt IS NULL AND StatusId In (2,3,12,13,14,15); 
+
+
+        INSERT INTO @dropdowns  
+        SELECT                 
+            CAST(PaymentTermsId AS INT) AS Id,                
+            PaymentTermName AS Name,  
+            ValueOrdering,  
+            'Payment Terms' AS DropdownName,
+            NULL AS AdditionalInfo 
+        FROM PaymentTerms;
+
+        INSERT INTO @dropdowns  
+        SELECT                 
+            CAST(BillingCategoryId AS INT) AS Id,                
+            BillingCategoryName AS Name,  
+            ValueOrdering,  
+            'Academic Billing Category' AS DropdownName,
+            NULL AS AdditionalInfo 
+        FROM BillingCategory 
+        WHERE DeletedAt IS NULL; 
+
+        INSERT INTO @dropdowns  
+        SELECT                 
+            CAST(CountryOfResidenceId AS INT) AS Id,                
+            CountryName AS Name,
+            ValueOrdering,  
+            'CountryCodeDropdown' AS DropdownName,
+            CountryCode AS AdditionalInfo 
+        FROM Country 
+        WHERE DeletedAt IS NULL;
+  
+        SELECT * 
+        FROM @dropdowns  
+        ORDER BY ValueOrdering;  
+                  
+    END TRY                                      
+    BEGIN CATCH                                      
+        DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE();                                      
+        DECLARE @ErrorSeverity NVARCHAR(MAX) = ERROR_SEVERITY();                                      
+        DECLARE @ErrorState NVARCHAR(MAX) = ERROR_STATE();                                
+        RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);                                      
+    END CATCH;                   
+END
+=============================================  =============================================  
+
+=============================================v SignUP SP  =============================================  
+USE [AISP]
+GO
+/****** Object:  StoredProcedure [dbo].[AcademicMemberSignUp]    Script Date: 21-06-2024 13:27:39 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+ALTER PROCEDURE [dbo].[AcademicMemberSignUp]  
+ (  
+@IsApplicationForNewMember bit,  
+@MembershipTypeId int,  
+@MembershipTenureId int,
+@StartDate datetime,
+@InstitutionName nvarchar(100),
+@UENNo nvarchar(100),  
+@AddressLine1 nvarchar(100),  
+@AddressLine2 nvarchar(100),  
+@AddressLine3 nvarchar(100), 
+@PostalCode nvarchar(100),
+@ACRABizFileName nvarchar(MAX),  
+@NameOfContactPerson nvarchar(100),  
+@CountrycodeID int,
+@ContactNo  nvarchar(100),  
+@DesignationId int,  
+@Email nvarchar(100)  
+  
+  
+ )  
+AS     
+BEGIN     
+SET NOCOUNT ON;    
+BEGIN TRY    
+  
+IF EXISTS (SELECT * FROM AcademicMembers WHERE Email = @Email AND [DeletedBy] is null)  
+BEGIN  
+ SELECT Cast(0 as INT) as KeyId,                     
+     Cast(0 as bit) AS HasError,                
+     'EXISTS' as ErrorType,                
+     'Email already Registered.' as ErrorMessage,                
+     'Email' as ErrorColumn     
+END  
+ELSE  
+BEGIN  
+ DECLARE @keyId AS INT  
+ -- Add your table Insert Statement  
+  
+ INSERT INTO AcademicMembers (  
+     IsApplicationForNewMember,  
+     MembershipTypeId,  
+     MembershipTenureId ,
+	 StartDate ,
+     InstitutionName,
+     UENNo,  
+     AddressLine1,  
+     AddressLine2,  
+     AddressLine3,  
+	 PostalCode,
+     ACRABizFileName,  
+     NameOfContactPerson,  
+     ContactNo ,  
+	 CountryOfResidenceId,
+     DesignationId ,  
+	 Email,
+	 CreatedAt,
+	 StatusId,
+	 IsStartMemberShip
+     )  
+    VALUES  
+    (  
+		@IsApplicationForNewMember,  
+		@MembershipTypeId,  
+		@MembershipTenureId ,
+		@StartDate ,
+		@InstitutionName,
+		@UENNo,  
+		@AddressLine1,  
+		@AddressLine2,  
+		@AddressLine3,  
+		@PostalCode,
+		@ACRABizFileName,  
+		@NameOfContactPerson,  
+		@ContactNo ,  
+		@CountrycodeID,
+		@DesignationId ,  
+		@Email,
+		GETDATE(),
+		2,
+		1
+    )  
+  
+ SET  @keyId = SCOPE_IDENTITY() 
+
+ Declare @previousSequenceNumber as bigint                            
+   set @previousSequenceNumber = ISNULL((select top 1 isnull(AcademicAccountSequenceNumber,0) from AcademicSIISAccountInformation order by AcademicAccountSequenceNumber desc),0)                            
+                          
+    INSERT INTO [AcademicSIISAccountInformation]                          
+    (                          
+		[AcademicMembersId],                          
+		[AccountStatus],                            
+		[AcademicJoinedDate],                            
+		[UpdatedAt],                            
+		[EngagementScore],                            
+		[CreatedAt],                            
+		[AcademicAccountSequenceNumber]                            
+    )                          
+    values                          
+    (                          
+		@keyId,                          
+		--(SELECT StatusId , StatusName FROM Status WHERE StatusName = 'Active'),                         
+		(SELECT StatusId  FROM Status WHERE StatusName = 'Active'),                          
+		 GETDATE(),                            
+		 GETDATE(),                          
+		 0,                          
+		 GetDATE(),                          
+		 @previousSequenceNumber + 1                            
+     ) 
+
+
+ 
+ insert into MembershipTasks(TransactionTypeId,CreatedAt,CreatedBy,CreatedAppId,AcademicMembersId,BillingCategoryId) 
+	values 
+	(
+	 1,getdate(),@keyId,115,@keyId,1
+	)
+    
+ SELECT @keyId as KeyId,     
+         Cast(0 as bit) AS HasError,  
+  '' as ErrorType,  
+  '' as ErrorMessage,  
+  '' as ErrorColumn  
+  
+END  
+  
+  
+END TRY      
+BEGIN CATCH    
+ DECLARE @ErrorMessage nvarchar(max) = ERROR_MESSAGE()    
+ DECLARE @ErrorSeverity nvarchar(max) = ERROR_SEVERITY()    
+ DECLARE @ErrorState nvarchar(max) = ERROR_STATE()    
+    RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState)    
+END CATCH    
+END 
+=============================================  =============================================  
