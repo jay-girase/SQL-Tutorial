@@ -190,7 +190,7 @@ BEGIN
     END CATCH  
 END  
 
-=============================================  =============================================  
+============================================= End =============================================  
 
 
 
@@ -313,7 +313,7 @@ BEGIN CATCH
 END CATCH                        
 END   
 
-=============================================  =============================================  
+============================================= End =============================================  
 
 =============================================  Dropdown SP =============================================  
 
@@ -435,7 +435,7 @@ BEGIN
         RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState);                                      
     END CATCH;                   
 END
-=============================================  =============================================  
+============================================= End =============================================  
 
 =============================================v SignUP SP  =============================================  
 USE [AISP]
@@ -582,4 +582,28 @@ BEGIN CATCH
     RAISERROR(@ErrorMessage, @ErrorSeverity, @ErrorState)    
 END CATCH    
 END 
-=============================================  =============================================  
+============================================= End =============================================  
+
+=============================================  Steps for find issue in production database =============================================  
+
+																******* Steps for find issue in production database **********
+																
+																1> Click on Tools 
+																
+																2> Select SQL Server Profile Option
+																
+																3> Fill up the credentials and click on connect button
+																
+																4> Click on Use the template dropdown and select Tunnig option
+																
+																5> and after that in the same page click on Event Selection 
+																
+																6> and after that in the same page uncheck checkbox SP:StmtCompleted and SQL:BatchCompleted
+																
+																7>and after that in the same page click on Column Filters... button
+																
+																8> click on DataBaseName after that click on Like and put your database name
+																
+																9> then click on run button
+
+============================================= End =============================================  
